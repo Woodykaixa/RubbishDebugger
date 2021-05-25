@@ -1,7 +1,15 @@
 ﻿cmake_minimum_required (VERSION 3.8)
+project(RubbishDebugger)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS ON)
+set(DIA_PATH "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/DIA SDK")
 
-project (RubbishDebugger)
 include_directories(${PROJECT_SOURCE_DIR}/ThridParty/Header)
+include_directories(${DIA_PATH}/include)
 link_directories(${PROJECT_SOURCE_DIR}/ThridParty/Lib)
 
-add_subdirectory ("RubbishDebugger")
+add_subdirectory("ThridParty/zydis")
+add_subdirectory("RubbishDebugger")
+option(ZYDIS_BUILD_TOOLS "" OFF)
+option(ZYDIS_BUILD_EXAMPLES "" OFF)
