@@ -267,33 +267,7 @@ bool RubbishDebugger::HandleCommand() {
 	if (command == "v") {
 		int count;
 		std::cin >> count;
-		auto addr = _context.Ebp + count * 4;
-		__asm {
-			push eax;
-			mov eax, dword ptr [addr];
-			mov addr, eax;
-			pop eax;
-			}
-		const auto size = addr - _context.Esp + 4;
-		auto* stackBuffer = new BYTE[size];
-		if (!Read(reinterpret_cast<void const*>(addr), stackBuffer, size)) {
-			PrintLastErrorVa("Read memory at %08X failed", addr);
-			ClearAndReturn(false);
-		}
-		for (auto i = 0; i < size / 4; i++) {
-			printf("%08X: %02X%02X%02X%02X",
-			       addr, stackBuffer[i * 4] % 0xFF, stackBuffer[i * 4 + 1] % 0xFF,
-			       stackBuffer[i * 4 + 2] % 0xFF, stackBuffer[i * 4 + 3] % 0xFF);
-			if (addr > _context.Ebp) {
-				auto diff = addr - _context.Ebp;
-				printf("\t<- arg%d\n", diff / 4);
-			} else if (addr == _context.Ebp) {
-				printf("\t<- return address\n");
-			} else {
-				printf("\n");
-			}
-			addr -= 4;
-		}
+		ShowStack(count);
 		ClearAndReturn(false);
 
 	}
@@ -310,24 +284,19 @@ void RubbishDebugger::ShowAssembly() const {
 	ZydisDecoder decoder;
 	ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_COMPAT_32, ZYDIS_ADDRESS_WIDTH_32);
 
-	// Initialize formatter. Only required when you actually plan to do instruction
-	// formatting ("disassembling"), like we do here
 	ZydisFormatter formatter;
 	ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
 
-	// Loop over the instructions in our buffer.
-	// The runtime-address (instruction pointer) is chosen arbitrary here in order to better
-	// visualize relative addressing
 	ZyanU32 runtime_address = _lastEip;
 	ZyanUSize offset = 0;
 	int lineCounter = 0;
 	const ZyanUSize length = 32;
 	char data[32] = {0};
 	if (!Read(reinterpret_cast<void const*>(_lastEip), data, length)) {
-		printf("Failed to read process memory at address: %08X, error: %08X\n", _lastEip, GetLastError());
+		PrintLastErrorVa("Failed to read memory at address %08X", _lastEip);
 		return;
 	}
-	const static std::regex regAddr("0x[0-9a-fA-F]{8}");
+	const std::regex regAddr("0x[0-9a-fA-F]{8}");
 	ZydisDecodedInstruction instruction;
 	while (ZYAN_SUCCESS(ZydisDecoderDecodeBuffer(&decoder, data + offset, length - offset,
 		&instruction)) && lineCounter < 5) {
@@ -336,22 +305,18 @@ void RubbishDebugger::ShowAssembly() const {
 			printf("%02X", data[offset + j] & 0xFF);
 		}
 		printf("\n");
-		// Print current instruction pointer.
 		printf("%08X  ", runtime_address);
 
-		// Format & print the binary instruction structure to human readable format
 		char buffer[256];
 		ZydisFormatterFormatInstruction(&formatter, &instruction, buffer, sizeof(buffer),
 		                                runtime_address);
 
 		printf("%s %s\n", buffer, (runtime_address == _lastEip ? "<-- EIP" : ""));
-		std::cmatch match;
-		if (std::regex_search(buffer, match, regAddr)) {
+		if (std::cmatch match; std::regex_search(buffer, match, std::regex("0x[0-9a-fA-F]{8}"))) {
 			auto str = match.str();
 			char* out;
 			DWORD address = strtol(str.c_str() + 2, &out, 16);
-			auto findResult = _pe->FindImportFunction(address);
-			if (std::get<0>(findResult)) {
+			if (auto findResult = _pe->FindImportFunction(address); std::get<0>(findResult)) {
 				std::cout << str << " = " << std::get<1>(findResult) << "\n";
 
 			}
@@ -370,6 +335,7 @@ void RubbishDebugger::ShowMemory(const void* address) const {
 		PrintLastErrorVa("Read memory at %p failed", address);
 		return;
 	}
+	RemoveCodeBreakpoints(address, memBuffer, MemBufferSize);
 	for (auto i = 0; i < MemBufferLines; i++) {
 		for (auto j = 0; j < 16; j++) {
 			if (j + 1 % 4 == 0) {
@@ -384,8 +350,42 @@ void RubbishDebugger::ShowMemory(const void* address) const {
 				printf(" ");
 			}
 			printf("%c", ToPrintableChar(memBuffer[i * 16 + j]));
-
 		}
 		printf("\n");
+	}
+}
+
+void RubbishDebugger::ShowStack(int parameterCount) const {
+	const auto size = (_context.Ebp - _context.Esp) / 4 + parameterCount + 1;
+
+	for (auto i = 0; i < size; i++) {
+		auto* currentAddr = reinterpret_cast<DWORD*>(_context.Ebp + (parameterCount - i) * 4);
+		DWORD memBuffer = 0;
+		if (Read(currentAddr, &memBuffer, 4)) {
+			printf("%p: %08X", currentAddr, memBuffer);
+		} else {
+			printf("%p: Error code: %08X", currentAddr, GetLastError());
+		}
+		const auto diff = static_cast<long>(reinterpret_cast<DWORD>(currentAddr) - _context.Ebp);
+		if (diff > 0) {
+			printf("\t<- arg%d\n", diff / 4);
+		} else if (diff == 0) {
+			printf("\t<- end of stack(ebp)\n");
+		} else if (reinterpret_cast<DWORD>(currentAddr) == _context.Esp) {
+			printf("\t<- top of stack(esp)\n");
+		} else {
+			printf("\n");
+		}
+	}
+}
+
+void RubbishDebugger::RemoveCodeBreakpoints(const void* address, BYTE* buffer, const int bufferSize) const {
+	for (auto i = 0; i < bufferSize; i++) {
+		const auto currentAddr = reinterpret_cast<DWORD>(address) + i;
+		auto it = _breakpointOriginalCodes.find(reinterpret_cast<void*>(currentAddr));
+		if (it == _breakpointOriginalCodes.end()) {
+			continue;
+		}
+		buffer[i] = it->second;
 	}
 }

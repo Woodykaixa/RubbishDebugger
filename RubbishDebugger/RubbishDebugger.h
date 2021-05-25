@@ -6,11 +6,6 @@
 #include "PortableExecutable.h"
 #include "ProgramDatabase.h"
 
-struct BreakpointInfo {
-	DWORD Address;
-	BYTE OriginCode;
-};
-
 class RubbishDebugger {
 
 public:
@@ -24,9 +19,12 @@ public:
 	bool HandleDebugEvent();
 	DWORD HandleExceptionDebugEvent(DEBUG_EVENT& dbgEvent);
 	bool HandleCommand();
+
 private:
 	void ShowAssembly() const;
 	void ShowMemory(const void* address) const;
+	void ShowStack(int parameterCount) const;
+	void RemoveCodeBreakpoints(const void* address, BYTE* buffer, int bufferSize) const;
 	PROCESS_INFORMATION _info;
 	PortableExecutable* _pe;
 	ProgramDatabase* _pdb;

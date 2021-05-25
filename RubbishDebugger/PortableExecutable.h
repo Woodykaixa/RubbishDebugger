@@ -31,6 +31,7 @@ public:
 	~PortableExecutable();
 	[[nodiscard]] DWORD VirtualToRaw(DWORD dwAddress) const noexcept;
 	[[nodiscard]] std::tuple<bool, std::string> FindImportFunction(DWORD address);
+	[[nodiscard]] const IMAGE_SECTION_HEADER* FindSection(const char* name);
 	IMAGE_DOS_HEADER DosHeader;
 	IMAGE_NT_HEADERS NtHeaders;
 	void* ImageBase;
@@ -44,5 +45,5 @@ private:
 #ifndef NDEBUG
 	void DebugPrintInfo() const;
 #endif
-
+public:
 };

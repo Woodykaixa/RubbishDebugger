@@ -130,8 +130,18 @@ std::tuple<bool, std::string> PortableExecutable::FindImportFunction(DWORD addre
 	return std::make_tuple(false, std::string());
 }
 
+const IMAGE_SECTION_HEADER* PortableExecutable::FindSection(const char* name) {
+	for (const auto& sec : _sections) {
+		if (memcmp(name, sec.Name, 8) == 0) {
+			return &sec;
+		}
+	}
+	return nullptr;
+}
+
 
 #ifndef NDEBUG
+
 void PortableExecutable::DebugPrintInfo() const {
 	printf("Is PE32 program: %s\n", Bool2String(Is32Bit));
 	printf("ImageBase: %p\n", ImageBase);
